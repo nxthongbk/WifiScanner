@@ -1,0 +1,23 @@
+sources:
+{
+    wifiScannner.c
+}
+
+requires:
+{
+    api:
+    {
+        dhubIO = io.api
+    }
+
+    component:
+    {
+        periodicSensor
+        json
+    }
+
+    api:
+    {
+        ${LEGATO_ROOT}/interfaces/wifi/le_wifiClient.api
+    }
+}

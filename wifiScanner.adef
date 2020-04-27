@@ -1,0 +1,30 @@
+sandboxed: true
+start: auto
+version: 0.1
+
+executables:
+{
+    wifiScanner = (
+        wifiScannerComponent
+    )
+}
+
+processes:
+{
+    run:
+    {
+        ( wifiScanner )
+    }
+
+    envVars:
+    {
+        LE_LOG_LEVEL = DEBUG
+    }
+}
+
+bindings:
+{
+    wifiScanner.wifiScannerComponent.le_wifiClient -> wifiService.le_wifiClient
+    wifiScanner.periodicSensor.dhubIO -> dataHub.io
+    wifiScanner.wifiScannerComponent.dhubIO -> dataHub.io
+}
