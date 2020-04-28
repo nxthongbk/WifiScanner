@@ -11,13 +11,10 @@
 #include "periodicSensor.h"
 #include "json.h"
 
-#include <time.h> /* time_t, time, ctime */
+static char scan_result_buffer[DHUBIO_MAX_STRING_VALUE_LEN];
 
-#define WIFI_SCAN_RESULT_BUFFER_SIZE 2048
-char scan_result_buffer[WIFI_SCAN_RESULT_BUFFER_SIZE];
-// le_mutex_Ref_t scan_result_valid;
-
-psensor_Ref_t __psensor_ref;
+static psensor_Ref_t PSensorRef;
+static le_wifiClient_ConnectionEventHandlerRef_t WifiEventHandlerRef = NULL;
 
 static void MyHandleScanResult(
     void)
@@ -38,17 +35,15 @@ static void MyHandleScanResult(
         size_t bssidNumElements = LE_WIFIDEFS_MAX_BSSID_BYTES;
         // Signal Strength
         int signal_strength = 0;
+        // base64 encoded
+        char base64SSID[LE_BASE64_ENCODED_SIZE(LE_WIFIDEFS_MAX_SSID_BYTES) + 1];
+        size_t base64SSID_len = LE_BASE64_ENCODED_SIZE(LE_WIFIDEFS_MAX_SSID_BYTES) + 1;
 
-        int remaining_size = WIFI_SCAN_RESULT_BUFFER_SIZE;
+        int remaining_size = DHUBIO_MAX_STRING_VALUE_LEN;
         int used = 0;
         int len = 0;
         bool need_comma = false;
 
-        time_t rawtime;
-
-        time(&rawtime);
-
-        // len = snprintf(scan_result_buffer + used, remaining_size, "{\"timestamp\":\"%s\",\"WifiScanResult\":[", ctime(&rawtime));
         len = snprintf(scan_result_buffer + used, remaining_size, "{\"WifiScanResult\":[");
         if (len < remaining_size)
         {
@@ -76,8 +71,8 @@ static void MyHandleScanResult(
             else
             {
                 LE_ERROR("le_wifiClient_GetSsid ERROR");
-                // memset(ssidBytes, 0, LE_WIFIDEFS_MAX_SSID_BYTES);
                 ssidBytes[0] = 0;
+                ssidNumElements = 0;
             }
 
             if (LE_OK == le_wifiClient_GetBssid(accessPointRef, &bssidBytes[0], bssidNumElements))
@@ -108,9 +103,18 @@ static void MyHandleScanResult(
             {
                 need_comma = true;
             }
+
+            if (le_base64_Encode(ssidBytes,
+                                 ssidNumElements,
+                                 base64SSID,
+                                 &base64SSID_len) != LE_OK)
+            {
+                LE_ERROR("Failed to encoding data!");
+            }
+
             len = snprintf(scan_result_buffer + used, remaining_size,
                            "{\"SSID\":\"%s\",\"BSSID\":\"%s\",\"RSSI\":\"%ddBm\"}",
-                           (char *)&ssidBytes[0],
+                           (char *)&base64SSID[0],
                            (char *)&bssidBytes[0],
                            signal_strength);
             if (len < remaining_size)
@@ -136,15 +140,9 @@ static void MyHandleScanResult(
             LE_FATAL("Buffer overflow. Unable to push Wifi scan result");
         }
 
-        // le_mutex_Unlock(scan_result_valid);
+        LE_ASSERT(json_IsValid(scan_result_buffer));
 
-        if (json_IsValid(scan_result_buffer)) {
-            LE_DEBUG(scan_result_buffer);
-            psensor_PushJson(__psensor_ref, 0 /* now */, scan_result_buffer);
-            LE_DEBUG("Push Done");
-        } else {
-            LE_ERROR("Not a JSON");
-        }
+        psensor_PushJson(PSensorRef, 0 /* now */, scan_result_buffer);
 
         LE_DEBUG("Done");
     }
@@ -153,6 +151,7 @@ static void MyHandleScanResult(
         LE_ERROR("le_wifiClient_GetFirstAccessPoint ERROR");
     }
 }
+
 static void WifiClientEventIndHandler(
     const le_wifiClient_EventInd_t *wifiEventPtr, ///< [IN] Wifi event
     void *contextPtr                              ///< [IN] Associated context pointer
@@ -186,18 +185,16 @@ static void WifiClientEventIndHandler(
         MyHandleScanResult();
     }
     break;
+
     default:
         LE_ERROR("ERROR Unknown event %d", wifiEventPtr->event);
         break;
     }
 }
 
-le_wifiClient_ConnectionEventHandlerRef_t WifiEventHandlerRef = NULL;
-
 static void SampleWifiScanResult(
     psensor_Ref_t ref, void *context)
 {
-
     if (LE_OK == le_wifiClient_Scan())
     {
         LE_DEBUG("Wifi scan is triggered");
@@ -206,30 +203,15 @@ static void SampleWifiScanResult(
     {
         LE_ERROR("Unable to start wifi scan");
     }
-
-    // le_mutex_Lock(scan_result_valid);
-
-    // if (json_IsValid(scan_result_buffer)) {
-    //     LE_DEBUG(scan_result_buffer);
-    //     psensor_PushJson(ref, 0 /* now */, scan_result_buffer);
-    //     LE_DEBUG("Push Done");
-    // } else {
-    //     LE_ERROR("Not a JSON");
-    // }
 }
 
 COMPONENT_INIT
 {
     le_result_t result;
 
-    // scan_result_valid = le_mutex_CreateNonRecursive("ScanResult");
-    // le_mutex_Lock(scan_result_valid);
-
     LE_DEBUG("Add event indicator handler");
     WifiEventHandlerRef = le_wifiClient_AddConnectionEventHandler(WifiClientEventIndHandler, NULL);
 
-    LE_DEBUG("Stop Wifi Client");
-    le_wifiClient_Stop();
     LE_DEBUG("Start Wifi Client");
     result = le_wifiClient_Start();
 
@@ -239,19 +221,12 @@ COMPONENT_INIT
     }
     else if (LE_BUSY == result)
     {
-        LE_DEBUG("ERROR: WiFi Client already started.");
+        LE_DEBUG("WiFi Client already started.");
     }
     else
     {
-        LE_DEBUG("ERROR: WiFi Client not started.");
+        LE_FATAL("WiFi Client not started.");
     }
 
-    // LE_DEBUG("Start Scan");
-    // if (LE_OK == le_timer_Start(scan_wifi_timer)) {
-    //     LE_DEBUG("Timer wifi scan is activated");
-    // } else {
-    //     LE_ERROR("Failed to activate timer wifi scan");
-    // }
-
-    __psensor_ref = psensor_Create("WifiScan", DHUBIO_DATA_TYPE_JSON, "", SampleWifiScanResult, NULL);
+    PSensorRef = psensor_Create("WifiScan", DHUBIO_DATA_TYPE_JSON, "", SampleWifiScanResult, NULL);
 }
