@@ -11,7 +11,7 @@
 #include "periodicSensor.h"
 #include "json.h"
 
-static char scan_result_buffer[DHUBIO_MAX_STRING_VALUE_LEN];
+static char scanResultBuffer[DHUBIO_MAX_STRING_VALUE_LEN];
 
 static psensor_Ref_t PSensorRef;
 static le_wifiClient_ConnectionEventHandlerRef_t WifiEventHandlerRef = NULL;
@@ -34,21 +34,21 @@ static void MyHandleScanResult(
         // BSSID length in bytes
         size_t bssidNumElements = LE_WIFIDEFS_MAX_BSSID_BYTES;
         // Signal Strength
-        int signal_strength = 0;
+        int signalStrength = 0;
         // base64 encoded
         char base64SSID[LE_BASE64_ENCODED_SIZE(LE_WIFIDEFS_MAX_SSID_BYTES) + 1];
-        size_t base64SSID_len = LE_BASE64_ENCODED_SIZE(LE_WIFIDEFS_MAX_SSID_BYTES) + 1;
+        size_t base64SSIDLenth = LE_BASE64_ENCODED_SIZE(LE_WIFIDEFS_MAX_SSID_BYTES) + 1;
 
-        int remaining_size = DHUBIO_MAX_STRING_VALUE_LEN;
+        int remainingSize = DHUBIO_MAX_STRING_VALUE_LEN;
         int used = 0;
         int len = 0;
-        bool need_comma = false;
+        bool needComma = false;
 
-        len = snprintf(scan_result_buffer + used, remaining_size, "{\"WifiScanResult\":[");
-        if (len < remaining_size)
+        len = snprintf(scanResultBuffer + used, remainingSize, "{\"WifiScanResult\":[");
+        if (len < remainingSize)
         {
             used += len;
-            remaining_size -= len;
+            remainingSize -= len;
         }
         else
         {
@@ -57,8 +57,8 @@ static void MyHandleScanResult(
 
         do
         {
-            signal_strength = le_wifiClient_GetSignalStrength(accessPointRef);
-            LE_DEBUG("le_wifiClient_GetSignalStrength %d ", signal_strength);
+            signalStrength = le_wifiClient_GetSignalStrength(accessPointRef);
+            LE_DEBUG("le_wifiClient_GetSignalStrength %d ", signalStrength);
 
             if (LE_OK == le_wifiClient_GetSsid(accessPointRef, &ssidBytes[0], &ssidNumElements))
             {
@@ -86,13 +86,13 @@ static void MyHandleScanResult(
                 memset(bssidBytes, 0, LE_WIFIDEFS_MAX_BSSID_BYTES);
             }
 
-            if (need_comma)
+            if (needComma)
             {
-                len = snprintf(scan_result_buffer + used, remaining_size, ",");
-                if (len < remaining_size)
+                len = snprintf(scanResultBuffer + used, remainingSize, ",");
+                if (len < remainingSize)
                 {
                     used += len;
-                    remaining_size -= len;
+                    remainingSize -= len;
                 }
                 else
                 {
@@ -101,26 +101,23 @@ static void MyHandleScanResult(
             }
             else
             {
-                need_comma = true;
+                needComma = true;
             }
 
-            if (le_base64_Encode(ssidBytes,
-                                 ssidNumElements,
-                                 base64SSID,
-                                 &base64SSID_len) != LE_OK)
-            {
-                LE_ERROR("Failed to encoding data!");
-            }
+            LE_ASSERT_OK(le_base64_Encode(ssidBytes,
+                                          ssidNumElements,
+                                          base64SSID,
+                                          &base64SSIDLenth));
 
-            len = snprintf(scan_result_buffer + used, remaining_size,
+            len = snprintf(scanResultBuffer + used, remainingSize,
                            "{\"SSID\":\"%s\",\"BSSID\":\"%s\",\"RSSI\":\"%ddBm\"}",
-                           (char *)&base64SSID[0],
-                           (char *)&bssidBytes[0],
-                           signal_strength);
-            if (len < remaining_size)
+                           base64SSID,
+                           bssidBytes,
+                           signalStrength);
+            if (len < remainingSize)
             {
                 used += len;
-                remaining_size -= len;
+                remainingSize -= len;
             }
             else
             {
@@ -129,20 +126,20 @@ static void MyHandleScanResult(
 
         } while (NULL != (accessPointRef = le_wifiClient_GetNextAccessPoint()));
 
-        len = snprintf(scan_result_buffer + used, remaining_size, "]}");
-        if (len < remaining_size)
+        len = snprintf(scanResultBuffer + used, remainingSize, "]}");
+        if (len < remainingSize)
         {
             used += len;
-            remaining_size -= len;
+            remainingSize -= len;
         }
         else
         {
             LE_FATAL("Buffer overflow. Unable to push Wifi scan result");
         }
 
-        LE_ASSERT(json_IsValid(scan_result_buffer));
+        LE_ASSERT(json_IsValid(scanResultBuffer));
 
-        psensor_PushJson(PSensorRef, 0 /* now */, scan_result_buffer);
+        psensor_PushJson(PSensorRef, 0 /* now */, scanResultBuffer);
 
         LE_DEBUG("Done");
     }
