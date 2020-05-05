@@ -1,5 +1,5 @@
 /**
- * This module implements a test for WiFi client.
+ * This module implements for WiFi Scanner.
  *
  * Copyright (C) Sierra Wireless Inc.
  *
